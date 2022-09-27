@@ -46,7 +46,9 @@
 #include <linux/mmc/host.h>
 #include <linux/i2c-gpio.h>
 #include <linux/spi/spi_gpio.h>
-
+#ifdef CONFIG_CAN_MCP251X
+#include <linux/can/platform/mcp251x.h>
+#endif
 //#ifdef CONFIG_LEDS_RDA
 #include <mach/regulator.h>
 //#endif /* CONFIG_LEDS_RDA */
@@ -392,13 +394,9 @@ static struct rda_mmc_device_data rda_mmc0_data[] = {
 		.f_min = 1000000,
 		.f_max = _TGT_AP_SDMMC1_MAX_FREQ,
 		.mclk_adj = _TGT_AP_SDMMC1_MCLK_ADJ,
-		.ocr_avail = MMC_VDD_32_33 | MMC_VDD_33_34,
+		.ocr_avail = MMC_VDD_165_195 | MMC_VDD_32_33 | MMC_VDD_33_34,
 
-#ifdef CONFIG_MACH_RDA8850E
-		.caps = MMC_CAP_4_BIT_DATA | MMC_CAP_SD_HIGHSPEED,
-#else
-		.caps = MMC_CAP_4_BIT_DATA,
-#endif /* CONFIG_MACH_RDA8850E */
+		.caps = MMC_CAP_4_BIT_DATA | MMC_CAP_UHS_DDR50 | MMC_CAP_SD_HIGHSPEED | MMC_CAP_ERASE | MMC_CAP_1_8V_DDR,
 
 #ifdef _TGT_AP_GPIO_MMC_HOTPLUG
 		.det_pin = _TGT_AP_GPIO_MMC_HOTPLUG,
@@ -441,16 +439,16 @@ static struct resource rda_mmc1_resource[] = {
 
 static struct rda_mmc_device_data rda_mmc1_data[] = {
 	{
-		.f_min = 1000000,
+		.f_min = 20000000,
 		.f_max = _TGT_AP_SDMMC2_MAX_FREQ,
 		.mclk_adj = _TGT_AP_SDMMC2_MCLK_ADJ,
-		.ocr_avail = MMC_VDD_32_33 | MMC_VDD_33_34,
+		.ocr_avail = MMC_VDD_165_195 | MMC_VDD_32_33 | MMC_VDD_33_34,
 		.caps = MMC_CAP_4_BIT_DATA | MMC_CAP_SDIO_IRQ,
 		.eirq_enable = 1,
 		.eirq_gpio = GPIO_WIFI, // WF_INTN
 		.debounce = -1,			// not care now
 		.eirq_sense = IRQF_TRIGGER_LOW | IRQF_NO_SUSPEND,
-		.sys_suspend = 1,
+		.sys_suspend = 0,
 		.pm_caps = MMC_PM_KEEP_POWER,
 		.dev_label = "rda_wlan_irq",
 #ifdef _TGT_AP_SDMMC2_MCLK_INV
@@ -1561,7 +1559,15 @@ RDA_SPI_PARAMETERS tlv320aic23_spi = {
 	.rxTrigger = RDA_SPI_RX_TRIGGER_4_BYTE,
 	.txTrigger = RDA_SPI_TX_TRIGGER_1_EMPTY,
 };
-
+#ifdef CONFIG_CAN_MCP251X
+static struct mcp251x_platform_data mcp251x_info = {
+        .oscillator_frequency = 16000000,
+        .board_specific_setup = NULL,
+        .power_enable = NULL,
+        .transceiver_enable = NULL,
+	.irq_flags = IRQF_TRIGGER_FALLING,
+};
+#endif
 static struct spi_board_info rda_spi_board_info[] = {
 #ifdef CONFIG_FB_RDA_DPI
 	{
@@ -1589,15 +1595,28 @@ static struct spi_board_info rda_spi_board_info[] = {
 		.controller_data = (void *) 10, // SPI2_CS_0 is not available on gpio HEADER, use any other GPIO CS pin
 		.platform_data = (void *) &spi2_gpio_data,
 	},
+#ifdef CONFIG_CAN_MCP251X
+	{
+		.modalias = "mcp2510", // driver name
+		.max_speed_hz = 1000000,
+		.mode = SPI_MODE_0,
+		.bus_num = 2, // mcp251x on spi2 CS_1
+		.chip_select = 1,
+		.controller_data = (void *) 6, // CS pin
+		.platform_data = (void *) &mcp251x_info,
+		.irq = 50,	// mcp2515 Interrupt pin on D02 ( GPIO 66) ( H26) = RDA_IRQ_NB + RDA_GPIO_BANK_IRQ * (Bank -1) + pin offset
+	},
+#else
 	{
 		.modalias = "spidev", // driver name
 		.max_speed_hz = 1000000,
 		.mode = SPI_MODE_0,
-		.bus_num = 2, // /dev/spidev2.1 using gpio_spi driver
+		.bus_num = 2, // spi2 CS_1
 		.chip_select = 1,
 		.controller_data = (void *) 6, // CS pin
 		.platform_data = (void *) &spi2_gpio_data,
 	},
+#endif
 };
 
 /*
@@ -1690,7 +1709,6 @@ static struct platform_device *devices[] __initdata = {
 	&rda_headset,
 	&rda_wdt_device,
 };
-
 void __init rda_init_devices(void)
 {
 	i2c_register_board_info(_TGT_AP_I2C_BUS_ID_WIFI,
@@ -1701,7 +1719,6 @@ void __init rda_init_devices(void)
 #endif
 	/* leave soc_camera_probe() to register i2c board_info */
 	// i2c_register_board_info(1, &i2c_dev_camera, 1);
-
 	spi_register_board_info(rda_spi_board_info,
 							ARRAY_SIZE(rda_spi_board_info));
 
