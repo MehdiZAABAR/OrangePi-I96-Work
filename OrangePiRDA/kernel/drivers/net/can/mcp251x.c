@@ -343,7 +343,6 @@ static u8 mcp251x_read_reg(struct spi_device *spi, uint8_t reg)
 
 	mcp251x_spi_trans(spi, 3);
 	val = priv->spi_rx_buf[2];
-
 	return val;
 }
 
@@ -809,38 +808,29 @@ static irqreturn_t mcp251x_can_ist(int irq, void *dev_id)
 		int can_id = 0, data1 = 0;
 
 		mcp251x_read_2regs(spi, CANINTF, &intf, &eflag);
+		//		printk( KERN_WARNING"mcp251x : 1- eFlag = %02x intf %02x\n", eflag, intf);
 
-		/* receive buffer 0 */
-		if (intf & CANINTF_RX0IF) {
+		if (intf & CANINTF_RX0IF)
+		{
 			mcp251x_hw_rx(spi, 0);
-			/* Free one buffer ASAP
-			 * (The MCP2515/25625 does this automatically.)
-			 */
-			if (mcp251x_is_2510(spi))
-				mcp251x_write_bits(spi, CANINTF,
-						   CANINTF_RX0IF, 0x00);
-
+			clear_intf |= CANINTF_RX0IF;
 			/* check if buffer 1 is already known to be full, no need to re-read */
-			if (!(intf & CANINTF_RX1IF)) {
-				u8 intf1, eflag1;
+						if (!(intf & CANINTF_RX1IF)) {
+							u8 intf1, eflag1;
 
-				/* intf needs to be read again to avoid a race condition */
-				mcp251x_read_2regs(spi, CANINTF, &intf1, &eflag1);
+							/* intf needs to be read again to avoid a race condition */
+							mcp251x_read_2regs(spi, CANINTF, &intf1, &eflag1);
 
-				/* combine flags from both operations for error handling */
-				intf |= intf1;
-				eflag |= eflag1;
-			}
+							/* combine flags from both operations for error handling */
+							intf |= intf1;
+							eflag |= eflag1;
+						}
 		}
-
-		/* receive buffer 1 */
-		if (intf & CANINTF_RX1IF) {
+		if (intf & CANINTF_RX1IF)
+		{
 			mcp251x_hw_rx(spi, 1);
-			/* The MCP2515/25625 does this automatically. */
-			if (mcp251x_is_2510(spi))
-				clear_intf |= CANINTF_RX1IF;
+			clear_intf |= CANINTF_RX1IF;
 		}
-
 		/* mask out flags we don't care about */
 		intf &= CANINTF_RX | CANINTF_TX | CANINTF_ERR;
 
@@ -851,8 +841,10 @@ static irqreturn_t mcp251x_can_ist(int irq, void *dev_id)
 			mcp251x_write_bits(spi, CANINTF, clear_intf, 0x00);
 
 		if (eflag & (EFLG_RX0OVR | EFLG_RX1OVR))
+		{
 			mcp251x_write_bits(spi, EFLG, eflag, 0x00);
-
+			printk( KERN_WARNING"mcp251x : RXOVR %02x", eflag);
+		}
 		/* Update can state */
 		if (eflag & EFLG_TXBO) {
 			new_state = CAN_STATE_BUS_OFF;
@@ -881,12 +873,11 @@ static irqreturn_t mcp251x_can_ist(int irq, void *dev_id)
 		switch (priv->can.state) {
 		case CAN_STATE_ERROR_ACTIVE:
 			if (new_state >= CAN_STATE_ERROR_WARNING &&
-			    new_state <= CAN_STATE_BUS_OFF)
+					new_state <= CAN_STATE_BUS_OFF)
 				priv->can.can_stats.error_warning++;
-			fallthrough;
 		case CAN_STATE_ERROR_WARNING:
 			if (new_state >= CAN_STATE_ERROR_PASSIVE &&
-			    new_state <= CAN_STATE_BUS_OFF)
+					new_state <= CAN_STATE_BUS_OFF)
 				priv->can.can_stats.error_passive++;
 			break;
 		default:
@@ -1094,8 +1085,9 @@ static int mcp251x_can_probe(struct spi_device *spi)
 	SET_NETDEV_DEV(net, &spi->dev);
 
 	/* Configure the SPI bus */
-	spi->mode = SPI_MODE_0;
-	spi->bits_per_word = 8;
+	//	printk( KERN_WARNING"mcp251x : spi mode %02X\n", spi->mode);
+	//	spi->mode = SPI_MODE_2;
+	//	spi->bits_per_word = 8;
 	spi_setup(spi);
 
 	/* Here is OK to not lock the MCP, no one knows about it yet */
